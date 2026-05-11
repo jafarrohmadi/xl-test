@@ -1,0 +1,176 @@
+openapi: 3.0.3
+info:
+  title: XLSmart Shared Components
+  description: Shared schemas, responses, headers, and security components.
+  version: 2.0.0
+  contact:
+    email: mochamady@xlsmart.co.id
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Bearer token for user/client-facing endpoints.
+
+  parameters:
+    RequestIdHeader:
+      name: X-Request-Id
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Correlation id for tracing and audit.
+      example: req-f9a2f8d6
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Key used to deduplicate retry requests.
+      example: 1c17b9d9-d36b-4811-b6b5-7a9a9ec2cbef
+    SignatureHeader:
+      name: X-Signature
+      in: header
+      required: true
+      schema:
+        type: string
+      description: HMAC SHA256 signature in hex format.
+      example: 1ec6512f31918f6fd7f7b78f93e8a5f722f8e123abc234cdef4567890123fedc
+    SignatureTimestampHeader:
+      name: X-Signature-Timestamp
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Signature timestamp (ISO 8601) used for replay window validation.
+      example: "2026-05-11T17:30:00Z"
+
+  responses:
+    BadRequest:
+      description: Invalid payload or validation error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            code: INVALID_REQUEST
+            message: Invalid request payload
+            request_id: req-f9a2f8d6
+    Unauthorized:
+      description: Missing or invalid authentication token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            code: UNAUTHORIZED
+            message: Missing or invalid bearer token
+            request_id: req-f9a2f8d6
+    Forbidden:
+      description: Authenticated but not allowed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Conflict due to duplicate or invalid state transition.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            code: RATE_LIMITED
+            message: Too many requests
+            request_id: req-f9a2f8d6
+    InternalError:
+      description: Unexpected internal error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [success, code, message, request_id]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        code:
+          type: string
+          example: INVALID_REQUEST
+        message:
+          type: string
+          example: Invalid request payload
+        request_id:
+          type: string
+          example: req-f9a2f8d6
+        details:
+          type: object
+          additionalProperties: true
+    SuccessMessage:
+      type: object
+      required: [success, code, message, request_id]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        code:
+          type: string
+          example: ACCEPTED
+        message:
+          type: string
+          example: Request accepted
+        request_id:
+          type: string
+          example: req-f9a2f8d6
+    StandardMeta:
+      type: object
+      properties:
+        request_id:
+          type: string
+        idempotency_key:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+    NotificationEvent:
+      type: object
+      required: [event_type, reference_id, user_id, channels]
+      properties:
+        event_type:
+          type: string
+          enum: [order_submitted, payment_success, payment_failed, fulfillment_success, fulfillment_failed]
+        reference_id:
+          type: string
+        user_id:
+          type: string
+        channels:
+          type: array
+          items:
+            type: string
+            enum: [email, sms, push]
+        template:
+          type: string
+        data:
+          type: object
+          additionalProperties: true

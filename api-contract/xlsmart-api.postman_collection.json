@@ -1,0 +1,324 @@
+{
+	"info": {
+		"_postman_id": "8b9e6c43-1e5b-449e-b12a-3a789a425a57",
+		"name": "XLSmart Microservices API",
+		"description": "Postman collection for SF Backend, Partner, and SF Payment microservices.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "SF Backend (Port 8081)",
+			"item": [
+				{
+					"name": "Create Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Request-Id",
+								"value": "{{$guid}}",
+								"type": "text"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "{{$guid}}",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer dummy_token",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"orderId\": \"ORD-20260511-0001\",\n    \"partnerId\": \"PARTNER-A\",\n    \"goods\": [\n        {\n            \"sku\": \"DATA-10GB\",\n            \"name\": \"Paket Data 10GB\",\n            \"desc\": \"Paket internet 10GB / 30 Hari\",\n            \"qty\": 1\n        }\n    ],\n    \"totalPrice\": 50000\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:8081/orders",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8081",
+							"path": [
+								"orders"
+							]
+						}
+					}
+				},
+				{
+					"name": "Fulfillment Callback",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Request-Id",
+								"value": "{{$guid}}",
+								"type": "text"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "{{$guid}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Signature",
+								"value": "dummy-signature",
+								"type": "text"
+							},
+							{
+								"key": "X-Signature-Timestamp",
+								"value": "{{$timestamp}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"referenceId\": \"REF-ABC12345\",\n    \"partnerOrderId\": \"P-XYZ987\",\n    \"status\": \"SUCCESS\",\n    \"voucher\": {\n        \"code\": \"VOUCHER-50K\",\n        \"serialNumber\": \"SN-998877\"\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:8081/orders/fulfillment/callback",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8081",
+							"path": [
+								"orders",
+								"fulfillment",
+								"callback"
+							]
+						}
+					}
+				},
+				{
+					"name": "Internal Notifications",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Request-Id",
+								"value": "{{$guid}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"event_type\": \"fulfillment.completed\",\n    \"reference_id\": \"REF-ABC12345\",\n    \"user_id\": \"user-123\",\n    \"channels\": [\"email\", \"push\"],\n    \"data\": {\n        \"order_id\": \"ORD-20260511-0001\",\n        \"voucher_code\": \"VOUCHER-50K\"\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:8081/internal/notifications",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8081",
+							"path": [
+								"internal",
+								"notifications"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Partner Service (Port 8083)",
+			"item": [
+				{
+					"name": "Submit Partner Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Request-Id",
+								"value": "{{$guid}}",
+								"type": "text"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "{{$guid}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"referenceId\": \"REF-ABC12345\",\n    \"orderId\": \"ORD-20260511-0001\",\n    \"goods\": [\n        {\n            \"sku\": \"DATA-10GB\",\n            \"qty\": 1\n        }\n    ],\n    \"totalPrice\": 50000\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:8083/partners/orders",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8083",
+							"path": [
+								"partners",
+								"orders"
+							]
+						}
+					}
+				},
+				{
+					"name": "Fulfillment Request",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Request-Id",
+								"value": "{{$guid}}",
+								"type": "text"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "{{$guid}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"referenceId\": \"REF-ABC12345\",\n    \"partnerOrderId\": \"P-XYZ987\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:8083/partners/fulfillment",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8083",
+							"path": [
+								"partners",
+								"fulfillment"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "SF Payment Service (Port 8082)",
+			"item": [
+				{
+					"name": "Process Payment",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Request-Id",
+								"value": "{{$guid}}",
+								"type": "text"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "{{$guid}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"referenceId\": \"REF-ABC12345\",\n    \"price\": 50000\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:8082/payments",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8082",
+							"path": [
+								"payments"
+							]
+						}
+					}
+				},
+				{
+					"name": "Payment Webhook",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Request-Id",
+								"value": "{{$guid}}",
+								"type": "text"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "{{$guid}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Signature",
+								"value": "dummy-signature",
+								"type": "text"
+							},
+							{
+								"key": "X-Signature-Timestamp",
+								"value": "{{$timestamp}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"referenceId\": \"REF-ABC12345\",\n    \"transactionId\": \"TXN-PG-12345678\",\n    \"status\": \"SUCCESS\",\n    \"amount\": 50000,\n    \"paidAt\": \"2026-05-11T12:00:00Z\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:8082/payments/webhook",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8082",
+							"path": [
+								"payments",
+								"webhook"
+							]
+						}
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost",
+			"type": "string"
+		}
+	]
+}

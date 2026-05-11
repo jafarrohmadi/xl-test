@@ -1,0 +1,240 @@
+openapi: 3.0.3
+info:
+  title: Order Service API
+  description: |
+    Order orchestration service - source of truth for order lifecycle.
+    Handles order submission, status management, and coordinates with payment and partner services.
+    Service boundary: Order Service (SF Backend).
+  version: 3.0.0
+servers:
+  - url: https://api.xlsmart.co.id/v1
+    description: Production
+  - url: http://localhost:8080/v1
+    description: Local Development
+tags:
+  - name: Orders
+    description: Order management and orchestration
+  - name: Internal
+    description: Internal endpoints for async operations
+
+paths:
+  /orders:
+    post:
+      tags: [Orders]
+      summary: Create new order
+      description: |
+        Orchestrates complete order flow:
+        1. Validates and records order to database
+        2. Submits order to partner system
+        3. Processes payment
+        4. Requests fulfillment
+      operationId: createOrder
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '../shared-components.yaml#/components/parameters/RequestIdHeader'
+        - $ref: '../shared-components.yaml#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Order created and orchestration started successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateOrderResponse'
+              example:
+                success: true
+                code: ORDER_CREATED
+                message: Order created successfully
+                request_id: req-f9a2f8d6
+                data:
+                  orderId: ORD-20260511-0001
+                  referenceId: REF-9c2f1d
+                  partnerOrderId: P-778899
+                  paymentStatus: SUCCESS
+        '400':
+          $ref: '../shared-components.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../shared-components.yaml#/components/responses/Unauthorized'
+        '409':
+          $ref: '../shared-components.yaml#/components/responses/Conflict'
+        '422':
+          description: Partner submission rejected by business validation.
+          content:
+            application/json:
+              schema:
+                $ref: '../shared-components.yaml#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                code: PARTNER_REJECTED
+                message: Partner rejected order submission
+                request_id: req-f9a2f8d6
+        '429':
+          $ref: '../shared-components.yaml#/components/responses/TooManyRequests'
+        '500':
+          $ref: '../shared-components.yaml#/components/responses/InternalError'
+
+  /orders/fulfillment/callback:
+    post:
+      tags: [Orders]
+      summary: Receive fulfillment callback from partner
+      description: |
+        Webhook endpoint for partner to send fulfillment updates.
+        Validates signature, checks idempotency, saves voucher, and triggers notification.
+      operationId: receiveFulfillmentCallback
+      parameters:
+        - $ref: '../shared-components.yaml#/components/parameters/RequestIdHeader'
+        - $ref: '../shared-components.yaml#/components/parameters/IdempotencyKeyHeader'
+        - $ref: '../shared-components.yaml#/components/parameters/SignatureHeader'
+        - $ref: '../shared-components.yaml#/components/parameters/SignatureTimestampHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FulfillmentCallbackRequest'
+      responses:
+        '200':
+          description: Callback accepted and processed idempotently.
+          content:
+            application/json:
+              schema:
+                $ref: '../shared-components.yaml#/components/schemas/SuccessMessage'
+              example:
+                success: true
+                code: FULFILLMENT_CALLBACK_ACCEPTED
+                message: Callback processed
+                request_id: req-f9a2f8d6
+        '400':
+          $ref: '../shared-components.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: '../shared-components.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '../shared-components.yaml#/components/responses/Conflict'
+        '500':
+          $ref: '../shared-components.yaml#/components/responses/InternalError'
+
+  /internal/notifications:
+    post:
+      tags: [Internal]
+      summary: Trigger notification event
+      description: |
+        Internal endpoint to trigger async notification processing.
+        Not accessible from external systems.
+      operationId: triggerNotification
+      parameters:
+        - $ref: '../shared-components.yaml#/components/parameters/RequestIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../shared-components.yaml#/components/schemas/NotificationEvent'
+      responses:
+        '202':
+          description: Notification job queued successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '../shared-components.yaml#/components/schemas/SuccessMessage'
+              example:
+                success: true
+                code: NOTIFICATION_QUEUED
+                message: Notification queued for processing
+                request_id: req-f9a2f8d6
+        '400':
+          $ref: '../shared-components.yaml#/components/responses/BadRequest'
+        '500':
+          $ref: '../shared-components.yaml#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      $ref: '../shared-components.yaml#/components/securitySchemes/BearerAuth'
+  schemas:
+    GoodsItem:
+      type: object
+      required: [sku, name, qty]
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+        desc:
+          type: string
+        qty:
+          type: integer
+          minimum: 1
+    CreateOrderRequest:
+      type: object
+      required: [orderId, partnerId, goods, totalPrice]
+      properties:
+        orderId:
+          type: string
+          example: ORD-20260511-0001
+        partnerId:
+          type: string
+          example: PARTNER-A
+        goods:
+          type: array
+          items:
+            $ref: '#/components/schemas/GoodsItem'
+        totalPrice:
+          type: number
+          format: double
+          minimum: 0
+    CreateOrderResponse:
+      type: object
+      required: [success, code, message, request_id, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        code:
+          type: string
+          example: ORDER_CREATED
+        message:
+          type: string
+          example: Order created successfully
+        request_id:
+          type: string
+          example: req-f9a2f8d6
+        data:
+          type: object
+          required: [orderId, referenceId, partnerOrderId, paymentStatus]
+          properties:
+            orderId:
+              type: string
+            referenceId:
+              type: string
+            partnerOrderId:
+              type: string
+            paymentStatus:
+              type: string
+              enum: [PENDING, SUCCESS, FAILED]
+    FulfillmentCallbackRequest:
+      type: object
+      required: [referenceId, partnerOrderId, status]
+      properties:
+        referenceId:
+          type: string
+        partnerOrderId:
+          type: string
+        status:
+          type: string
+          enum: [SUCCESS, FAILED]
+        voucher:
+          type: object
+          nullable: true
+          properties:
+            code:
+              type: string
+            serialNumber:
+              type: string
+        failureReason:
+          type: string

@@ -1,0 +1,167 @@
+openapi: 3.0.3
+info:
+  title: Payment Service API
+  description: |
+    Payment processing service - handles payment requests and gateway webhooks.
+    Validates signatures, manages idempotency, and coordinates payment status updates.
+    Service boundary: Payment Service (SF Payment).
+  version: 3.0.0
+servers:
+  - url: https://api.xlsmart.co.id/v1
+    description: Production
+  - url: http://localhost:8080/v1
+    description: Local Development
+tags:
+  - name: Payments
+    description: Payment processing and status management
+
+paths:
+  /payments:
+    post:
+      tags: [Payments]
+      summary: Process payment request
+      description: |
+        Processes payment request from Order Service.
+        Validates payload, checks idempotency, executes payment processing.
+      operationId: processPayment
+      parameters:
+        - $ref: '../shared-components.yaml#/components/parameters/RequestIdHeader'
+        - $ref: '../shared-components.yaml#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+      responses:
+        '200':
+          description: Payment processed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+              example:
+                success: true
+                code: PAYMENT_SUCCESS
+                message: Payment processed successfully
+                request_id: req-f9a2f8d6
+                data:
+                  referenceId: REF-9c2f1d
+                  paymentStatus: SUCCESS
+                  paidAt: "2026-05-11T17:30:00Z"
+        '400':
+          $ref: '../shared-components.yaml#/components/responses/BadRequest'
+        '402':
+          description: Payment rejected by payment gateway.
+          content:
+            application/json:
+              schema:
+                $ref: '../shared-components.yaml#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                code: PAYMENT_REJECTED
+                message: Payment rejected by gateway
+                request_id: req-f9a2f8d6
+        '409':
+          $ref: '../shared-components.yaml#/components/responses/Conflict'
+        '500':
+          $ref: '../shared-components.yaml#/components/responses/InternalError'
+
+  /payments/webhook:
+    post:
+      tags: [Payments]
+      summary: Receive payment gateway webhook
+      description: |
+        Webhook endpoint for payment gateway callbacks.
+        Verifies HMAC signature, validates replay window, checks idempotency, and updates payment status.
+      operationId: handlePaymentWebhook
+      parameters:
+        - $ref: '../shared-components.yaml#/components/parameters/RequestIdHeader'
+        - $ref: '../shared-components.yaml#/components/parameters/IdempotencyKeyHeader'
+        - $ref: '../shared-components.yaml#/components/parameters/SignatureHeader'
+        - $ref: '../shared-components.yaml#/components/parameters/SignatureTimestampHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentWebhookRequest'
+      responses:
+        '200':
+          description: Webhook accepted and processed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '../shared-components.yaml#/components/schemas/SuccessMessage'
+              example:
+                success: true
+                code: WEBHOOK_ACCEPTED
+                message: Payment webhook processed
+                request_id: req-f9a2f8d6
+        '400':
+          $ref: '../shared-components.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: '../shared-components.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '../shared-components.yaml#/components/responses/Conflict'
+        '500':
+          $ref: '../shared-components.yaml#/components/responses/InternalError'
+
+components:
+  schemas:
+    PaymentRequest:
+      type: object
+      required: [referenceId, price]
+      properties:
+        referenceId:
+          type: string
+        price:
+          type: number
+          format: double
+          minimum: 0
+    PaymentResponse:
+      type: object
+      required: [success, code, message, request_id, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        code:
+          type: string
+          example: PAYMENT_SUCCESS
+        message:
+          type: string
+          example: Payment processed
+        request_id:
+          type: string
+        data:
+          type: object
+          required: [referenceId, paymentStatus]
+          properties:
+            referenceId:
+              type: string
+            paymentStatus:
+              type: string
+              enum: [SUCCESS, FAILED, PENDING]
+            paidAt:
+              type: string
+              format: date-time
+              nullable: true
+    PaymentWebhookRequest:
+      type: object
+      required: [referenceId, transactionId, status, amount]
+      properties:
+        referenceId:
+          type: string
+        transactionId:
+          type: string
+        status:
+          type: string
+          enum: [SUCCESS, FAILED, EXPIRED]
+        amount:
+          type: number
+          format: double
+        paidAt:
+          type: string
+          format: date-time
+          nullable: true

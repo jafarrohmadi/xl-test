@@ -1,0 +1,185 @@
+openapi: 3.0.3
+info:
+  title: Partner Integration API
+  description: |
+    Partner integration service - handles communication with external partner systems.
+    Manages order submission to partners, fulfillment requests, and receives fulfillment callbacks.
+    Service boundary: Partner Integration.
+  version: 3.0.0
+servers:
+  - url: https://partner.xlsmart.co.id
+    description: Partner Production
+  - url: https://sandbox.partner.xlsmart.co.id
+    description: Partner Sandbox
+tags:
+  - name: Partners
+    description: Partner order and fulfillment operations
+
+paths:
+  /partners/orders:
+    post:
+      tags: [Partners]
+      summary: Submit order to partner system
+      description: |
+        Submits order to external partner for processing.
+        Partner validates and returns partnerOrderId.
+      operationId: submitOrderToPartner
+      parameters:
+        - $ref: '../shared-components.yaml#/components/parameters/RequestIdHeader'
+        - $ref: '../shared-components.yaml#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerOrderRequest'
+      responses:
+        '200':
+          description: Partner accepted order successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerOrderResponse'
+              example:
+                success: true
+                code: PARTNER_ORDER_ACCEPTED
+                message: Partner accepted order
+                request_id: req-f9a2f8d6
+                data:
+                  partnerOrderId: P-778899
+                  status: ACCEPTED
+        '400':
+          $ref: '../shared-components.yaml#/components/responses/BadRequest'
+        '409':
+          $ref: '../shared-components.yaml#/components/responses/Conflict'
+        '500':
+          $ref: '../shared-components.yaml#/components/responses/InternalError'
+
+  /partners/fulfillment:
+    post:
+      tags: [Partners]
+      summary: Request voucher fulfillment
+      description: |
+        Requests partner to fulfill voucher for accepted order.
+        Partner processes asynchronously and sends callback when ready.
+      operationId: requestFulfillment
+      parameters:
+        - $ref: '../shared-components.yaml#/components/parameters/RequestIdHeader'
+        - $ref: '../shared-components.yaml#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FulfillmentRequest'
+      responses:
+        '200':
+          description: Fulfillment request accepted successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FulfillmentAcceptedResponse'
+              example:
+                success: true
+                code: FULFILLMENT_IN_PROGRESS
+                message: Fulfillment process started
+                request_id: req-f9a2f8d6
+        '400':
+          $ref: '../shared-components.yaml#/components/responses/BadRequest'
+        '500':
+          $ref: '../shared-components.yaml#/components/responses/InternalError'
+
+components:
+  schemas:
+    PartnerGoods:
+      type: object
+      required: [sku, qty]
+      properties:
+        sku:
+          type: string
+        qty:
+          type: integer
+          minimum: 1
+    PartnerOrderRequest:
+      type: object
+      required: [referenceId, orderId, goods, totalPrice]
+      properties:
+        referenceId:
+          type: string
+        orderId:
+          type: string
+        goods:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartnerGoods'
+        totalPrice:
+          type: number
+          format: double
+    PartnerOrderResponse:
+      type: object
+      required: [success, code, message, request_id, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        code:
+          type: string
+          example: PARTNER_ORDER_ACCEPTED
+        message:
+          type: string
+          example: Partner accepted order
+        request_id:
+          type: string
+        data:
+          type: object
+          required: [partnerOrderId, status]
+          properties:
+            partnerOrderId:
+              type: string
+            status:
+              type: string
+              enum: [ACCEPTED]
+    FulfillmentRequest:
+      type: object
+      required: [referenceId, partnerOrderId]
+      properties:
+        referenceId:
+          type: string
+        partnerOrderId:
+          type: string
+    FulfillmentAcceptedResponse:
+      type: object
+      required: [success, code, message, request_id]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        code:
+          type: string
+          example: FULFILLMENT_IN_PROGRESS
+        message:
+          type: string
+          example: Fulfillment process started
+        request_id:
+          type: string
+    FulfillmentCallbackPayload:
+      type: object
+      required: [referenceId, partnerOrderId, status]
+      properties:
+        referenceId:
+          type: string
+        partnerOrderId:
+          type: string
+        status:
+          type: string
+          enum: [SUCCESS, FAILED]
+        voucher:
+          type: object
+          nullable: true
+          properties:
+            code:
+              type: string
+            serialNumber:
+              type: string
+        failureReason:
+          type: string
