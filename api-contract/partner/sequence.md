@@ -4,36 +4,58 @@
 
 ```mermaid
 sequenceDiagram
-    participant SF as SF Backend
-    participant PA as Partner
+    participant Backend as sf-backend
+    participant Partner as partner
+    participant Database as Partner DB
 
-    SF->>PA: POST /partners/orders<br/>(referenceId, orderId, goods, totalPrice)
-    Note over PA: Receive & Process submit order<br/>Validate payload, idempotency key
-    PA->>PA: Create partnerOrderId
-    PA-->>SF: 200 PARTNER_ORDER_ACCEPTED<br/>(partnerOrderId, status)
+    Backend->>Partner: POST /partners/orders<br/>(referenceId, orderId, goods, totalPrice)
+    Partner->>Database: SELECT from idempotency_records
+    Database-->>Partner: idempotency result
+    
+    alt Idempotency Hit
+        Partner-->>Backend: 200 OK (Cached)
+    else Idempotency Miss
+        Partner->>Partner: Validate Stock & Price
+        alt Validation Success
+            Partner->>Database: INSERT into partner_orders (Status: ACCEPTED)
+            Database-->>Partner: order saved
+            Partner-->>Backend: 200 PARTNER_ORDER_ACCEPTED
+        else Validation Failure
+            Partner-->>Backend: 422 Unprocessable Entity
+        end
+    end
 ```
 
 ## Endpoint: `POST /partners/fulfillment`
 
 ```mermaid
 sequenceDiagram
-    participant SF as SF Backend
-    participant PA as Partner
+    participant Backend as sf-backend
+    participant Partner as partner
+    participant Database as Partner DB
 
-    SF->>PA: POST /partners/fulfillment<br/>(referenceId, partnerOrderId)
-    Note over PA: Process fulfillment voucher<br/>Validate reference and eligibility
-    PA->>PA: Process voucher fulfillment async
-    PA-->>SF: 200 FULFILLMENT_IN_PROGRESS
+    Backend->>Partner: POST /partners/fulfillment<br/>(referenceId, partnerOrderId)
+    Partner->>Database: SELECT from partner_orders
+    Database-->>Partner: partner order record
+    
+    alt Order Valid
+        Partner->>Database: INSERT into fulfillments (Status: IN_PROGRESS)
+        Database-->>Partner: fulfillment saved
+        Partner->>Partner: Trigger Async Worker for Voucher
+        Partner-->>Backend: 200 FULFILLMENT_IN_PROGRESS
+    else Order Invalid
+        Partner-->>Backend: 404 Not Found
+    end
 ```
 
-## Outbound Callback Contract (Partner → Order Service)
+## Outbound Callback Contract (Partner → sf-backend)
 
 ```mermaid
 sequenceDiagram
-    participant PA as Partner
-    participant SF as Order Service (SF Backend)
+    participant Partner as partner
+    participant Backend as sf-backend
 
-    PA->>SF: POST /orders/fulfillment/callback<br/>(referenceId, partnerOrderId, status, voucher)
-    Note over SF: Verify HMAC signature and replay window<br/>Process callbackFulfillment
-    SF-->>PA: 200 FULFILLMENT_CALLBACK_ACCEPTED
+    Partner->>Backend: POST /orders/fulfillment/callback<br/>(referenceId, partnerOrderId, status, voucher)
+    Note over Backend: Verify HMAC signature and replay window<br/>Process callbackFulfillment
+    Backend-->>Partner: 200 FULFILLMENT_CALLBACK_ACCEPTED
 ```

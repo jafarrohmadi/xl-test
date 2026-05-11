@@ -4,36 +4,55 @@
 
 ```mermaid
 sequenceDiagram
-    participant WA as Web/Apps
-    participant OS as Order Service
-    participant DB as Database
-    participant PI as Partner Integration
-    participant PS as Payment Service
+    participant WebApps as Web/Apps
+    participant Backend as sf-backend
+    participant Database as Database
+    participant Partner as partner
+    participant Payment as sf-payment
 
-    WA->>WA: User opens sfshop.id and chooses product
-    WA->>OS: POST /orders<br/>(orderId, partnerId, goods[sku, name, desc, qty], totalPrice)
-    OS->>DB: Validate params & record into DB
-    DB-->>OS: Order saved
+    WebApps->>WebApps: User opens sfshop.id and chooses product
+    WebApps->>Backend: POST /orders<br/>(orderId, partnerId, goods[sku, name, desc, qty], totalPrice)
+    Backend->>Database: SELECT from idempotency_records
+    Database-->>Backend: idempotency result
+    
+    alt Idempotency Hit
+        Backend-->>WebApps: 200 OK (Return cached response)
+    else Idempotency Miss
+        Backend->>Database: INSERT into orders (Status: PENDING)
+        Database-->>Backend: order saved
+        Backend->>Database: INSERT into order_items
+        Database-->>Backend: items saved
 
-    OS->>PI: POST /partners/orders<br/>(referenceId, orderId, goods, totalPrice)
-    PI->>PI: Receive & process order submission
-    PI-->>OS: 200 PARTNER_ORDER_ACCEPTED<br/>(partnerOrderId, status)
+        Backend->>Partner: POST /partners/orders<br/>(referenceId, orderId, goods, totalPrice)
+        Partner->>Partner: Receive & process order submission
+        
+        alt Partner Success
+            Partner-->>Backend: 200 PARTNER_ORDER_ACCEPTED
+            Backend->>Database: UPDATE orders (Update partnerOrderId)
+            Database-->>Backend: updated
+        else Partner Failure
+            Partner-->>Backend: 400/500 Error
+            Backend->>Database: UPDATE orders (Status: FAILED)
+            Backend-->>WebApps: Error Response
+        end
+    end
 
-    OS->>OS: Update order with partnerOrderId
+    Backend->>Payment: POST /payments<br/>(referenceId, price)
+    Payment->>Payment: Process payment
+    Payment-->>Backend: 200 PAYMENT_SUCCESS<br/>(referenceId, paymentStatus, paidAt)
 
-    OS->>PS: POST /payments<br/>(referenceId, price)
-    PS->>PS: Process payment
-    PS-->>OS: 200 PAYMENT_SUCCESS<br/>(referenceId, paymentStatus, paidAt)
+    Backend->>Database: UPDATE orders (Update payment status)
+    Database-->>Backend: updated
 
-    OS->>OS: Update order payment status
+    Backend->>Partner: POST /partners/fulfillment<br/>(referenceId, partnerOrderId)
+    Partner->>Partner: Process fulfillment voucher (async)
+    Partner-->>Backend: 200 FULFILLMENT_IN_PROGRESS
 
-    OS->>PI: POST /partners/fulfillment<br/>(referenceId, partnerOrderId)
-    PI->>PI: Process fulfillment voucher (async)
-    PI-->>OS: 200 FULFILLMENT_IN_PROGRESS
+    Backend->>Database: UPDATE orders (Status: SUBMITTED)
+    Database-->>Backend: updated
+    Backend-->>WebApps: 201 ORDER_CREATED<br/>(orderId, referenceId, partnerOrderId, paymentStatus)
 
-    OS-->>WA: 201 ORDER_CREATED<br/>(orderId, referenceId, partnerOrderId, paymentStatus)
-
-    Note over PI,OS: Partner will asynchronously call back<br/>POST /orders/fulfillment/callback<br/>when voucher fulfillment is ready
+    Note over Partner,Backend: Partner will asynchronously call back<br/>POST /orders/fulfillment/callback<br/>when voucher fulfillment is ready
 ```
 
 ---
@@ -44,25 +63,29 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant PI as Partner Integration
-    participant OS as Order Service
-    participant DB as Database
-    participant NW as Notification Worker
-    participant WA as Web/Apps
+    participant Partner as partner
+    participant Backend as sf-backend
+    participant Database as Database
+    participant NotificationWorker as Notification Worker
+    participant WebApps as Web/Apps
 
-    PI->>OS: POST /orders/fulfillment/callback<br/>(referenceId, partnerOrderId, status, voucher)
-    Note over OS: Validate HMAC signature<br/>Check replay window (< 5 min)<br/>Check idempotency key
+    Partner->>Backend: POST /orders/fulfillment/callback<br/>(referenceId, partnerOrderId, status, voucher)
+    Note over Backend: Validate HMAC signature<br/>Check replay window (< 5 min)<br/>Check idempotency key
 
-    OS->>DB: Save voucher + update order status
-    DB-->>OS: Updated
+    Backend->>Database: SELECT from orders (by ReferenceID)
+    Database-->>Backend: order record
+    Backend->>Database: INSERT into fulfillments (Save voucher data)
+    Database-->>Backend: fulfillment saved
+    Backend->>Database: UPDATE orders (Status: COMPLETED/FAILED)
+    Database-->>Backend: updated
 
-    OS-->>PI: 200 FULFILLMENT_CALLBACK_ACCEPTED
+    Backend-->>Partner: 200 FULFILLMENT_CALLBACK_ACCEPTED
 
-    OS->>NW: POST /internal/notifications<br/>(event_type, reference_id, user_id, channels, data)
-    NW->>NW: Enqueue notification job
-    NW-->>OS: 202 NOTIFICATION_QUEUED
-    NW->>WA: Deliver notification (email/sms/push)
-    Note over WA: User receives fulfillment notification
+    Backend->>NotificationWorker: POST /internal/notifications<br/>(event_type, reference_id, user_id, channels, data)
+    NotificationWorker->>NotificationWorker: Enqueue notification job
+    NotificationWorker-->>Backend: 202 NOTIFICATION_QUEUED
+    NotificationWorker->>WebApps: Deliver notification (email/sms/push)
+    Note over WebApps: User receives fulfillment notification
 ```
 
 ---
@@ -73,16 +96,16 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant OS as Order Service
-    participant NW as Notification Worker
-    participant NP as Notification Provider
-    participant WA as Web/Apps
+    participant Backend as sf-backend
+    participant NotificationWorker as Notification Worker
+    participant NotificationProvider as Notification Provider
+    participant WebApps as Web/Apps
 
-    OS->>NW: POST /internal/notifications<br/>(event_type, reference_id, user_id, channels, data)
-    Note over NW: Internal endpoint only<br/>Validate request_id and payload
-    NW->>NW: Enqueue notification job
-    NW-->>OS: 202 NOTIFICATION_QUEUED
-    NW->>NP: Send via email/sms/push provider
-    NP->>WA: Deliver notification
-    Note over WA: User receives notification
+    Backend->>NotificationWorker: POST /internal/notifications<br/>(event_type, reference_id, user_id, channels, data)
+    Note over NotificationWorker: Internal endpoint only<br/>Validate request_id and payload
+    NotificationWorker->>NotificationWorker: Enqueue notification job
+    NotificationWorker-->>Backend: 202 NOTIFICATION_QUEUED
+    NotificationWorker->>NotificationProvider: Send via email/sms/push provider
+    NotificationProvider->>WebApps: Deliver notification
+    Note over WebApps: User receives notification
 ```

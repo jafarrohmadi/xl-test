@@ -1,0 +1,36 @@
+sequenceDiagram
+    participant Web as Web/Apps
+    participant SFB as SF Backend
+    participant DB as Database
+    participant Partner as Partner
+    participant SFP as SF Payment
+
+    Note over Web,SFP: Flow Test Case - Diagram for Test Usecase
+
+    Web->>Web: Start
+    Web->>Web: User Open sfshop id<br/>and choose product
+    Web->>SFB: Hit API Submit Order
+    Note right of Web: [1] API Submit Order<br/>(orderId, partnerId,<br/>partnerId, productId, desc,<br/>qty, totalPrice)
+    
+    SFB->>DB: Validate params &<br/>record into DB
+    SFB->>Partner: Process Data Submit<br/>Order to partner
+    Note right of SFB: request submit order
+    
+    Partner->>Partner: Receive & Process<br/>submit order
+    Partner-->>SFB: return<br/>partner/OrderId
+    
+    SFB->>SFP: Continue Process<br/>Payment
+    Note right of SFB: request payment (referenceId, price)
+    
+    SFP->>SFP: Process Payment
+    SFP-->>SFB: response success payment
+    
+    SFB->>Partner: Request Fulfill<br/>voucher
+    Note right of SFB: request fulfillment
+    
+    Partner->>Partner: Process fulfillment<br/>voucher
+    Partner-->>SFB: response partner
+    
+    SFB->>SFB: Process<br/>callback/Fulfillment
+    SFB->>Web: Send notif to user
+    Web->>Web: Done
